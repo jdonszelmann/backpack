@@ -1,6 +1,6 @@
-use std::cell::Ref;
 use std::path::{Path, PathBuf};
 use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
+use parking_lot::RwLockReadGuard;
 use crate::error;
 use crate::pack::maybe_ref::MaybeRef;
 use crate::pack::slice::PackSlice;
@@ -56,7 +56,7 @@ impl InMemoryFile<'_, '_> {
     pub fn get_bytes(&self) -> MaybeRef<[u8]> {
         match self {
             InMemoryFile::Named { data, .. } => data.get_ref().as_slice().into(),
-            InMemoryFile::Packed { data, .. } => Ref::map(data.get_bytes().borrow(), |i| i.as_slice()).into(),
+            InMemoryFile::Packed { data, .. } => RwLockReadGuard::map(data.get_bytes().read(), |i| i.as_slice()).into(),
             InMemoryFile::Unnamed { data, .. } => data.get_ref().as_slice().into(),
         }
     }
@@ -81,6 +81,19 @@ impl InMemoryFile<'_, '_> {
                     data
                 }
             }
+        }
+    }
+
+    pub fn try_clone(&self) -> error::Result<Self> {
+        match self {
+            InMemoryFile::Named { .. } => todo!(),
+            InMemoryFile::Packed { data, name } => {
+                Ok(InMemoryFile::Packed {
+                    name: name.clone(),
+                    data: data.clone(),
+                })
+            }
+            InMemoryFile::Unnamed { .. } => todo!(),
         }
     }
 }

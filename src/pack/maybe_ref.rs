@@ -1,10 +1,10 @@
-use std::cell::Ref;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
+use parking_lot::MappedRwLockReadGuard;
 
 pub enum MaybeRef<'a, T: ?Sized> {
     Regular(&'a T),
-    Ref(Ref<'a, T>),
+    Ref(MappedRwLockReadGuard<'a, T>),
 }
 
 impl<T: Debug + ?Sized> Debug for MaybeRef<'_, T> {
@@ -21,8 +21,8 @@ impl<'a, T: ?Sized> From<&'a T> for MaybeRef<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> From<Ref<'a, T>> for MaybeRef<'a, T> {
-    fn from(r: Ref<'a, T>) -> Self {
+impl<'a, T: ?Sized> From<MappedRwLockReadGuard<'a, T>> for MaybeRef<'a, T> {
+    fn from(r: MappedRwLockReadGuard<'a, T>) -> Self {
         Self::Ref(r)
     }
 }

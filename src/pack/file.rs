@@ -50,9 +50,7 @@ impl<'f, 'backpack> RawFile<'f, 'backpack> {
             }
         }
     }
-}
 
-impl RawFile<'_, '_> {
     pub fn in_memory(name: impl AsRef<Path>) -> Self {
         Self::InMemory(InMemoryFile::new(name))
     }
@@ -96,6 +94,19 @@ impl RawFile<'_, '_> {
         match self {
             RawFile::InMemory(..) => todo!(),
             RawFile::Disk { file, .. } => file.metadata().map_err(Into::into),
+        }
+    }
+
+    pub fn try_clone(&self) -> Result<Self> {
+        match self {
+            RawFile::InMemory(f) => Ok(RawFile::InMemory(f.try_clone()?)),
+            RawFile::Disk { file, name } => {
+                let f =  file.try_clone()?;
+                Ok(RawFile::Disk {
+                    name: name.clone(),
+                    file: f,
+                })
+            }
         }
     }
 

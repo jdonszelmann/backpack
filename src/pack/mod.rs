@@ -41,7 +41,6 @@ pub const PACK_HEADER_SIZE: u64 = 26;
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
     use crate::RawFile;
     use crate::pack::in_memory::InMemoryFile;
     use crate::pack::PACK_VERSION;
@@ -77,7 +76,7 @@ mod tests {
     #[test]
     fn test_add_file() -> Result<(), PackError> {
         let file = RawFile::in_memory("test.bp");
-        let mut bp = BackPack::create(file)?;
+        let bp = BackPack::create(file)?;
 
         let f: InMemoryFile = "test".into();
         bp.add_file(f.with_name("test.txt"))?;
@@ -85,7 +84,7 @@ mod tests {
         let file = bp.close()?;
 
         // now there's stuff in the file, which can be read again with `open`
-        let mut bp = BackPack::open(file)?;
+        let bp = BackPack::open(file)?;
         let f = bp.get_file("test.txt")?;
 
         assert_eq!(&*f.get_bytes(), b"test");

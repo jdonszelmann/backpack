@@ -1,6 +1,6 @@
-use std::cell::RefCell;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::{Deref, DerefMut};
+use parking_lot::RwLock;
 use crate::BackPack;
 
 pub struct PackSlice<'f, 'backpack> {
@@ -10,6 +10,17 @@ pub struct PackSlice<'f, 'backpack> {
     pos: u64,
 
     pub(crate) pack: &'f BackPack<'f, 'backpack>
+}
+
+impl Clone for PackSlice<'_, '_> {
+    fn clone(&self) -> Self {
+        PackSlice {
+            start: self.start,
+            end: self.end,
+            pos: self.pos,
+            pack: self.pack
+        }
+    }
 }
 
 impl<'f, 'backpack> PackSlice<'f, 'backpack> {
@@ -30,19 +41,19 @@ impl<'f, 'backpack> PackSlice<'f, 'backpack> {
         (self.start, self.end)
     }
 
-    pub fn get_bytes(&self) -> &RefCell<Vec<u8>> {
+    pub fn get_bytes(&self) -> &RwLock<Vec<u8>> {
         self.pack.retrieve_slice(self)
     }
 
     pub fn resize(&mut self, size: u64) {
-        let mut v = self.pack.retrieve_slice(self);
-        v.borrow_mut().resize(size as usize, 0);
+        let v = self.pack.retrieve_slice(self);
+        v.write().resize(size as usize, 0);
     }
 }
 
 impl Read for PackSlice<'_, '_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let g = self.pack.retrieve_slice(self).borrow();
+        let g = self.pack.retrieve_slice(self).read();
 
         let mut c = Cursor::new(g.deref());
         c.set_position(self.pos);
@@ -57,7 +68,7 @@ impl Write for PackSlice<'_, '_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut g = self.pack
             .retrieve_slice(self)
-            .borrow_mut();
+            .write();
 
         let mut c = Cursor::new(g.deref_mut());
         c.set_position(self.pos);
@@ -76,7 +87,7 @@ impl Seek for PackSlice<'_, '_> {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let g = self.pack
             .retrieve_slice(self)
-            .borrow();
+            .read();
 
 
         let mut c = Cursor::new(g.deref());

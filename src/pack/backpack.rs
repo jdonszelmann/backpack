@@ -1,11 +1,10 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
 use elsa::sync::FrozenMap;
+use parking_lot::RwLock;
 use crate::{error, RawFile};
 use crate::pack::in_memory::InMemoryFile;
 use crate::pack::{PACK_HEADER_SIZE, PACK_MAGIC, PACK_VERSION, TOC_SIZE};
@@ -40,7 +39,7 @@ pub enum BackPack<'f, 'backpack> {
 
         offsets: RwLock<HashMap<String, (u64, u64)>>,
         removals: FrozenMap<String, &'backpack ()>,
-        data: FrozenMap<(u64, u64), Box<RefCell<Vec<u8>>>>,
+        data: FrozenMap<(u64, u64), Box<RwLock<Vec<u8>>>>,
 
         total_size: AtomicU64,
 
@@ -57,7 +56,7 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
         }
     }
 
-    pub(crate) fn retrieve_slice(&self, s: &PackSlice) -> &RefCell<Vec<u8>> {
+    pub(crate) fn retrieve_slice(&self, s: &PackSlice) -> &RwLock<Vec<u8>> {
         match self {
             BackPack::PartiallyParsed { .. } => todo!(),
             BackPack::Parsed { data, .. } => {
@@ -237,7 +236,7 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
         let (offsets, mut toc_blocks) = Self::parse_headers(&mut file)?;
         toc_blocks.sort();
 
-        let mut data = FrozenMap::new();
+        let data = FrozenMap::new();
         let mut total_size = 0;
 
         for (_name, (offset, length)) in &offsets {
@@ -248,7 +247,7 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
             file.read_exact(&mut buf)?;
 
             total_size += buf.len() as u64;
-            data.insert((*offset, *length), Box::new(RefCell::new(buf)));
+            data.insert((*offset, *length), Box::new(RwLock::new(buf)));
         }
 
 
@@ -347,7 +346,7 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
             } => {
                 let mut new_data = Vec::new();
                 let mut new_offsets = HashMap::new();
-                for (name, (start, length)) in offsets.read().unwrap().deref() {
+                for (name, (start, length)) in offsets.read().deref() {
                     let contents = data.get(&(*start, *length))
                         .ok_or(PackError::InvalidEntry)?;
 
@@ -356,7 +355,7 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
                     }
 
                     new_offsets.insert(name.clone(), (new_data.len() as u64, *length));
-                    new_data.extend(contents.borrow().deref());
+                    new_data.extend(contents.read().deref());
                 }
 
                 if let Some(file) = file {
@@ -390,8 +389,8 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
 
                 let name = f.name().ok_or(NoName)?;
 
-                offsets.write().unwrap().deref_mut().insert(name.to_string_lossy().into_owned(), key);
-                data.insert(key, Box::new(RefCell::new(f_data)));
+                offsets.write().deref_mut().insert(name.to_string_lossy().into_owned(), key);
+                data.insert(key, Box::new(RwLock::new(f_data)));
 
                 Ok(InMemoryFile::Packed {
                     name: name.to_path_buf(),
@@ -409,26 +408,21 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
         self.add_file(f.try_into().map_err(Into::<PackError>::into)?.with_name(name))
     }
 
-    pub fn remove_file(&mut self, name: impl AsRef<Path>) -> error::Result<InMemoryFile> {
+    pub fn remove_file(&mut self, name: impl AsRef<Path>) -> error::Result<()> {
         let name = name.as_ref();
         match self {
             BackPack::PartiallyParsed { .. } => todo!(),
             BackPack::Parsed {
                 offsets,
-                data,
-                total_size,
+                removals,
                 ..
             } => {
-                todo!()
-                // if let Some(ref identifier) = offsets.remove(name.to_string_lossy().as_ref()) {
-                    // let v = data.remove(identifier)
-                    //     .ok_or(PackError::InvalidEntry)?
-                    //     .into_inner();
-
-                    // Ok(v.into())
-                // } else {
-                //     Err(PackError::FileNotFound(name.to_path_buf()))
-                // }
+                if let Some(ref _identifier) = offsets.write().remove(name.to_string_lossy().as_ref()) {
+                    removals.insert(name.to_string_lossy().into_owned(), &());
+                    Ok(())
+                } else {
+                    Err(PackError::FileNotFound(name.to_path_buf()))
+                }
             }
         }
     }
@@ -444,7 +438,7 @@ impl<'f, 'backpack: 'f> BackPack<'f, 'backpack> {
                     return Err(PackError::FileNotFound(path_buf.clone()));
                 }
 
-                let r = offsets.read().unwrap();
+                let r = offsets.read();
                 let (offset, length) = r.get(name.as_ref().to_string_lossy().as_ref())
                     .ok_or_else(|| PackError::FileNotFound(path_buf.clone()))?;
 
