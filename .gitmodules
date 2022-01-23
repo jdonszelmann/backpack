@@ -1,0 +1,3 @@
+[submodule "elsa"]
+	path = elsa
+	url = git@github.com:jonay2000/elsa.git

@@ -4,6 +4,7 @@ pub mod pack;
 
 /// Drop-in replacements for std::fs::*;
 pub mod dropin;
+mod error;
 
 pub use dropin::File;
 pub use pack::BackPack;

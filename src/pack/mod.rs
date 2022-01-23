@@ -1,14 +1,13 @@
 mod slice;
-mod error;
 mod backpack;
 mod file;
 mod in_memory;
-mod guarded_bytes;
+mod maybe_ref;
 
-pub use crate::pack::backpack::BackPack;
 pub use file::RawFile;
 pub use in_memory::InMemoryFile;
-pub use error::{PackError, Result};
+pub use crate::pack::backpack::BackPack;
+pub use crate::error::{PackError, Result};
 
 pub const fn parse_int(s: &'static [u8]) -> u16 {
     match s {
@@ -42,11 +41,12 @@ pub const PACK_HEADER_SIZE: u64 = 26;
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
     use crate::RawFile;
     use crate::pack::in_memory::InMemoryFile;
     use crate::pack::PACK_VERSION;
     use crate::pack::backpack::BackPack;
-    use crate::pack::error::PackError;
+    use crate::error::PackError;
 
     #[test]
     pub fn test_version() {
@@ -88,7 +88,7 @@ mod tests {
         let mut bp = BackPack::open(file)?;
         let f = bp.get_file("test.txt")?;
 
-        assert_eq!(f.as_slice(), b"test");
+        assert_eq!(&*f.get_bytes(), b"test");
 
         bp.close()?;
 

@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::io::{Error as IoError, ErrorKind};
+use std::path::PathBuf;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 use crate::pack::PACK_MAGIC;
@@ -21,8 +22,8 @@ pub enum PackError {
     #[error("attempted operation on closed file")]
     Closed,
 
-    #[error("file {0} not present in backpack")]
-    FileNotFound(String),
+    #[error("file {0:?} not present in backpack")]
+    FileNotFound(PathBuf),
 
     #[error("attempted to pack a file which has no name")]
     NoName,

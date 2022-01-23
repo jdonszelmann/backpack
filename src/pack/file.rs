@@ -1,31 +1,28 @@
 use std::fs::Metadata;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
-use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use crate::pack::in_memory::InMemoryFile;
-use crate::pack::error::Result;
+use crate::error::Result;
 
 pub enum RawFile<'f, 'backpack> {
-    InMemory(InMemoryFile<'f, 'backpack>, PhantomData<&'f ()>),
+    InMemory(InMemoryFile<'f, 'backpack>),
     Disk {
-        name: Option<String>,
+        name: Option<PathBuf>,
         file: std::fs::File,
-
-        lifetime: PhantomData<&'f ()>,
     },
 }
 
 impl<'f, 'backpack> RawFile<'f, 'backpack> {
     pub fn into_memory(self) -> std::result::Result<InMemoryFile<'f, 'backpack>, RawFile<'f, 'backpack>> {
         match self {
-            RawFile::InMemory(f, _) => Ok(f),
+            RawFile::InMemory(f) => Ok(f),
             f @ RawFile::Disk { .. } => Err(f)
         }
     }
 
     pub fn convert_into_memory(self) -> Result<InMemoryFile<'f, 'backpack>> {
         match self {
-            RawFile::InMemory(f, _) => Ok(f),
+            RawFile::InMemory(f) => Ok(f),
             RawFile::Disk { mut file, name, .. } => {
                 let mut data = Vec::new();
                 file.read_to_end(&mut data)?;
@@ -44,12 +41,11 @@ impl<'f, 'backpack> RawFile<'f, 'backpack> {
 
     pub fn with_name(self, name: impl AsRef<Path>) -> Self {
         match self {
-            RawFile::InMemory(f, _) => RawFile::InMemory(f.with_name(name), Default::default()),
+            RawFile::InMemory(f) => RawFile::InMemory(f.with_name(name)),
             RawFile::Disk { file, .. } => {
                 RawFile::Disk {
-                    name: Some(name.as_ref().to_string_lossy().into_owned()),
+                    name: Some(name.as_ref().to_path_buf()),
                     file,
-                    lifetime: Default::default()
                 }
             }
         }
@@ -58,22 +54,20 @@ impl<'f, 'backpack> RawFile<'f, 'backpack> {
 
 impl RawFile<'_, '_> {
     pub fn in_memory(name: impl AsRef<Path>) -> Self {
-        Self::InMemory(InMemoryFile::new(name), Default::default())
+        Self::InMemory(InMemoryFile::new(name))
     }
 
     pub fn create(s: impl AsRef<Path>) -> Result<Self> {
         Ok(Self::Disk {
-            name: Some(s.as_ref().to_string_lossy().into_owned()),
+            name: Some(s.as_ref().to_path_buf()),
             file: std::fs::File::create(s)?,
-            lifetime: Default::default()
         })
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Ok(Self::Disk {
-            name: Some(path.as_ref().to_string_lossy().into_owned()),
+            name: Some(path.as_ref().to_path_buf()),
             file: std::fs::File::open(path)?,
-            lifetime: Default::default()
         })
     }
 
@@ -115,7 +109,7 @@ impl RawFile<'_, '_> {
         }
     }
 
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&Path> {
         match self {
             RawFile::InMemory(f, ..) => f.name(),
             RawFile::Disk { name,  .. } => name.as_deref(),
@@ -168,31 +162,30 @@ impl From<std::fs::File> for RawFile<'_, '_> {
         Self::Disk {
             file: f,
             name: None,
-            lifetime: Default::default()
         }
     }
 }
 
 impl<'f, 'backpack> From<InMemoryFile<'f, 'backpack>> for RawFile<'f, 'backpack> {
     fn from(f: InMemoryFile<'f, 'backpack>) -> Self {
-        RawFile::InMemory(f, Default::default())
+        RawFile::InMemory(f)
     }
 }
 
 impl From<String> for RawFile<'_, '_> {
     fn from(s: String) -> Self {
-        RawFile::InMemory(s.into(), Default::default())
+        RawFile::InMemory(s.into())
     }
 }
 
 impl From<&str> for RawFile<'_, '_> {
     fn from(s: &str) -> Self {
-        RawFile::InMemory(s.to_string().into(), Default::default())
+        RawFile::InMemory(s.to_string().into())
     }
 }
 
 impl From<Vec<u8>> for RawFile<'_, '_> {
     fn from(s: Vec<u8>) -> Self {
-        RawFile::InMemory(s.into(), Default::default())
+        RawFile::InMemory(s.into())
     }
 }

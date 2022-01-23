@@ -1,18 +1,25 @@
-use std::path::Path;
+use std::cell::Ref;
+use std::path::{Path, PathBuf};
 use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
-use crate::pack::error;
-use crate::pack::guarded_bytes::GuardedBytes;
+use crate::error;
+use crate::pack::maybe_ref::MaybeRef;
 use crate::pack::slice::PackSlice;
 
 impl InMemoryFile<'_, '_> {
     pub fn new(name: impl AsRef<Path>) -> Self {
         Self::Named {
-            name: name.as_ref().to_string_lossy().into_owned(),
+            name: name.as_ref().to_path_buf(),
             data: Cursor::new(vec![]),
         }
     }
 
-    pub fn name(&self) -> Option<&str> {
+    pub fn unnamed() -> Self {
+        Self::Unnamed {
+            data: Default::default()
+        }
+    }
+
+    pub fn name(&self) -> Option<&Path> {
         match self {
             InMemoryFile::Named { name, .. } |
             InMemoryFile::Packed { name, .. } => Some(name),
@@ -39,17 +46,18 @@ impl InMemoryFile<'_, '_> {
                 data.get_mut().resize(size as usize, 0);
                 Ok(())
             }
-            InMemoryFile::Packed { data, name } => {
-                data.resize(size, name)
+            InMemoryFile::Packed { data, ..} => {
+                data.resize(size);
+                Ok(())
             }
         }
     }
 
-    pub fn as_slice(&self) -> GuardedBytes {
+    pub fn get_bytes(&self) -> MaybeRef<[u8]> {
         match self {
             InMemoryFile::Named { data, .. } => data.get_ref().as_slice().into(),
-            InMemoryFile::Packed { data, .. } => data.as_slice(),
-            InMemoryFile::Unnamed { data, .. } => data.get_ref().as_slice().into()
+            InMemoryFile::Packed { data, .. } => Ref::map(data.get_bytes().borrow(), |i| i.as_slice()).into(),
+            InMemoryFile::Unnamed { data, .. } => data.get_ref().as_slice().into(),
         }
     }
 
@@ -57,19 +65,19 @@ impl InMemoryFile<'_, '_> {
         match self {
             InMemoryFile::Named { data, .. } => {
                 InMemoryFile::Named {
-                    name: s.as_ref().to_string_lossy().into_owned(),
+                    name: s.as_ref().to_path_buf(),
                     data
                 }
             }
             InMemoryFile::Packed { data, .. } => {
                 InMemoryFile::Packed {
-                    name: s.as_ref().to_string_lossy().into_owned(),
+                    name: s.as_ref().to_path_buf(),
                     data
                 }
             }
             InMemoryFile::Unnamed { data } => {
                 InMemoryFile::Named {
-                    name: s.as_ref().to_string_lossy().into_owned(),
+                    name: s.as_ref().to_path_buf(),
                     data
                 }
             }
@@ -79,11 +87,11 @@ impl InMemoryFile<'_, '_> {
 
 pub enum InMemoryFile<'f, 'backpack> {
     Named {
-        name: String,
+        name: PathBuf,
         data: Cursor<Vec<u8>>,
     },
     Packed {
-        name: String,
+        name: PathBuf,
         data: PackSlice<'f, 'backpack>,
     },
     Unnamed {
